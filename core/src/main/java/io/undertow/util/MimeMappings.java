@@ -34,7 +34,7 @@ public class MimeMappings {
     public static final Map<String, String> DEFAULT_MIME_MAPPINGS;
 
     static {
-        Map<String, String> defaultMappings = new HashMap<String, String>(101);
+        Map<String, String> defaultMappings = new HashMap<>(101);
         defaultMappings.put("txt", "text/plain");
         defaultMappings.put("css", "text/css");
         defaultMappings.put("html", "text/html");
@@ -112,6 +112,7 @@ public class MimeMappings {
         defaultMappings.put("aiff", "audio/x-aiff");
         defaultMappings.put("aifc", "audio/x-aiff");
         defaultMappings.put("wav", "audio/x-wav");
+        defaultMappings.put("mp3", "audio/mpeg");
         defaultMappings.put("mpeg", "video/mpeg");
         defaultMappings.put("mpg", "video/mpeg");
         defaultMappings.put("mpe", "video/mpeg");
@@ -154,7 +155,7 @@ public class MimeMappings {
     }
 
     public static class Builder {
-        private final Map<String, String> mappings = new HashMap<String, String>();
+        private final Map<String, String> mappings = new HashMap<>();
 
 
         private Builder(boolean includeDefault) {
