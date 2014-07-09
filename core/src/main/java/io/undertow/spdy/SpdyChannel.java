@@ -23,7 +23,11 @@ import io.undertow.UndertowMessages;
 import io.undertow.server.protocol.framed.AbstractFramedChannel;
 import io.undertow.server.protocol.framed.AbstractFramedStreamSourceChannel;
 import io.undertow.server.protocol.framed.FrameHeaderData;
+import io.undertow.util.Attachable;
+import io.undertow.util.AttachmentKey;
+import io.undertow.util.AttachmentList;
 import io.undertow.util.HeaderMap;
+
 import org.xnio.Bits;
 import org.xnio.ChannelExceptionHandler;
 import org.xnio.ChannelListeners;
@@ -36,6 +40,8 @@ import org.xnio.ssl.SslConnection;
 import javax.net.ssl.SSLSession;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,7 +53,7 @@ import java.util.zip.Inflater;
  *
  * @author Stuart Douglas
  */
-public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSourceChannel, SpdyStreamSinkChannel> {
+public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSourceChannel, SpdyStreamSinkChannel> implements Attachable {
 
     static final int DEFAULT_INITIAL_WINDOW_SIZE = 64 * 1024 * 0124;
 
@@ -60,9 +66,9 @@ public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSo
     static final int HEADERS = 8;
     static final int WINDOW_UPDATE = 9;
 
-    static final int CLOSE_OK = 0;
-    static final int CLOSE_PROTOCOL_ERROR = 1;
-    static final int CLOSE_INTERNAL_ERROR = 2;
+    public static final int CLOSE_OK = 0;
+    public static final int CLOSE_PROTOCOL_ERROR = 1;
+    public static final int CLOSE_INTERNAL_ERROR = 2;
 
     static final int FLAG_FIN = 1;
     static final int FLAG_UNIDIRECTIONAL = 2;
@@ -93,13 +99,16 @@ public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSo
     private boolean thisGoneAway = false;
     private boolean peerGoneAway = false;
 
-    private int streamIdCounter = 1;
+    private int streamIdCounter;
     private int lastGoodStreamId;
 
-    public SpdyChannel(StreamConnection connectedStreamChannel, Pool<ByteBuffer> bufferPool, Pooled<ByteBuffer> data, Pool<ByteBuffer> heapBufferPool) {
+    private final Map<AttachmentKey<?>, Object> attachments = Collections.synchronizedMap(new HashMap<AttachmentKey<?>, Object>());
+
+    public SpdyChannel(StreamConnection connectedStreamChannel, Pool<ByteBuffer> bufferPool, Pooled<ByteBuffer> data, Pool<ByteBuffer> heapBufferPool, boolean clientSide) {
         super(connectedStreamChannel, bufferPool, SpdyFramePriority.INSTANCE, data);
         this.heapBufferPool = heapBufferPool;
         this.deflater.setDictionary(SpdyProtocolUtils.SPDY_DICT);
+        streamIdCounter = clientSide ? 2 : 1;
     }
 
     @Override
@@ -197,7 +206,7 @@ public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSo
     @Override
     protected void handleBrokenSourceChannel(Throwable e) {
         UndertowLogger.REQUEST_LOGGER.debugf(e, "Closing SPDY channel to %s due to broken read side", getPeerAddress());
-        IoUtils.safeClose(this);
+        sendGoAway(CLOSE_PROTOCOL_ERROR, new SpdyControlMessageExceptionHandler());
     }
 
     @Override
@@ -357,6 +366,58 @@ public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSo
         outgoingStreams.remove(streamId);
     }
 
+    @Override
+    public <T> T getAttachment(AttachmentKey<T> key) {
+        if (key == null) {
+            throw UndertowMessages.MESSAGES.argumentCannotBeNull("key");
+        }
+        return (T) attachments.get(key);
+    }
+
+    @Override
+    public <T> List<T> getAttachmentList(AttachmentKey<? extends List<T>> key) {
+        if (key == null) {
+            throw UndertowMessages.MESSAGES.argumentCannotBeNull("key");
+        }
+        Object o = attachments.get(key);
+        if(o == null) {
+            return Collections.emptyList();
+        }
+        return (List)o;
+    }
+
+    @Override
+    public <T> T putAttachment(AttachmentKey<T> key, T value) {
+        if (key == null) {
+            throw UndertowMessages.MESSAGES.argumentCannotBeNull("key");
+        }
+        return key.cast(attachments.put(key, key.cast(value)));
+    }
+
+    @Override
+    public <T> T removeAttachment(AttachmentKey<T> key) {
+        return key.cast(attachments.remove(key));
+    }
+
+    @Override
+    public <T> void addToAttachmentList(AttachmentKey<AttachmentList<T>> key, T value) {
+
+        if (key == null) {
+            throw UndertowMessages.MESSAGES.argumentCannotBeNull("key");
+        }
+        final Map<AttachmentKey<?>, Object> attachments = this.attachments;
+        synchronized (attachments) {
+            final List<T> list = key.cast(attachments.get(key));
+            if (list == null) {
+                final AttachmentList<T> newList = new AttachmentList<T>((Class<T>) Object.class);
+                attachments.put(key, newList);
+                newList.add(value);
+            } else {
+                list.add(value);
+            }
+        }
+    }
+
 
     class SpdyFrameParser implements FrameHeaderData {
 
@@ -491,6 +552,7 @@ public class SpdyChannel extends AbstractFramedChannel<SpdyChannel, SpdyStreamSo
     private class SpdyControlMessageExceptionHandler implements ChannelExceptionHandler<SpdyStreamSinkChannel> {
         @Override
         public void handleException(SpdyStreamSinkChannel channel, IOException exception) {
+            IoUtils.safeClose(channel);
             handleBrokenSinkChannel(exception);
         }
     }

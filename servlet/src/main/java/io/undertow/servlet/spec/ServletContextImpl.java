@@ -43,11 +43,14 @@ import io.undertow.servlet.api.SessionConfigWrapper;
 import io.undertow.servlet.api.TransportGuaranteeType;
 import io.undertow.servlet.core.ApplicationListeners;
 import io.undertow.servlet.core.ManagedListener;
+import io.undertow.servlet.core.ManagedServlet;
 import io.undertow.servlet.handlers.ServletChain;
+import io.undertow.servlet.handlers.ServletHandler;
 import io.undertow.servlet.util.EmptyEnumeration;
 import io.undertow.servlet.util.ImmediateInstanceFactory;
 import io.undertow.servlet.util.IteratorEnumeration;
 import io.undertow.util.AttachmentKey;
+import io.undertow.util.CanonicalPathUtils;
 
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RunAs;
@@ -309,9 +312,10 @@ public class ServletContextImpl implements ServletContext {
         if (path == null) {
             return null;
         }
+        String canonicalPath = CanonicalPathUtils.canonicalize(path);
         Resource resource = null;
         try {
-            resource = deploymentInfo.getResourceManager().getResource(path);
+            resource = deploymentInfo.getResourceManager().getResource(canonicalPath);
         } catch (IOException e) {
             return null;
         }
@@ -406,8 +410,8 @@ public class ServletContextImpl implements ServletContext {
             ServletInfo servlet = new ServletInfo(servletName, (Class<? extends Servlet>) deploymentInfo.getClassLoader().loadClass(className));
             readServletAnnotations(servlet);
             deploymentInfo.addServlet(servlet);
-            deployment.getServlets().addServlet(servlet);
-            return new ServletRegistrationImpl(servlet, deployment);
+            ServletHandler handler = deployment.getServlets().addServlet(servlet);
+            return new ServletRegistrationImpl(servlet, handler.getManagedServlet(), deployment);
         } catch (ClassNotFoundException e) {
             throw UndertowServletMessages.MESSAGES.cannotLoadClass(className, e);
         }
@@ -423,8 +427,8 @@ public class ServletContextImpl implements ServletContext {
         ServletInfo s = new ServletInfo(servletName, servlet.getClass(), new ImmediateInstanceFactory<>(servlet));
         readServletAnnotations(s);
         deploymentInfo.addServlet(s);
-        deployment.getServlets().addServlet(s);
-        return new ServletRegistrationImpl(s, deployment);
+        ServletHandler handler = deployment.getServlets().addServlet(s);
+        return new ServletRegistrationImpl(s, handler.getManagedServlet(), deployment);
     }
 
     @Override
@@ -437,8 +441,8 @@ public class ServletContextImpl implements ServletContext {
         ServletInfo servlet = new ServletInfo(servletName, servletClass);
         readServletAnnotations(servlet);
         deploymentInfo.addServlet(servlet);
-        deployment.getServlets().addServlet(servlet);
-        return new ServletRegistrationImpl(servlet, deployment);
+        ServletHandler handler = deployment.getServlets().addServlet(servlet);
+        return new ServletRegistrationImpl(servlet, handler.getManagedServlet(), deployment);
     }
 
 
@@ -455,19 +459,19 @@ public class ServletContextImpl implements ServletContext {
     @Override
     public ServletRegistration getServletRegistration(final String servletName) {
         ensureNotProgramaticListener();
-        final ServletInfo servlet = deploymentInfo.getServlets().get(servletName);
+        final ManagedServlet servlet = deployment.getServlets().getManagedServlet(servletName);
         if (servlet == null) {
             return null;
         }
-        return new ServletRegistrationImpl(servlet, deployment);
+        return new ServletRegistrationImpl(servlet.getServletInfo(), servlet, deployment);
     }
 
     @Override
     public Map<String, ? extends ServletRegistration> getServletRegistrations() {
         ensureNotProgramaticListener();
         final Map<String, ServletRegistration> ret = new HashMap<>();
-        for (Map.Entry<String, ServletInfo> entry : deploymentInfo.getServlets().entrySet()) {
-            ret.put(entry.getKey(), new ServletRegistrationImpl(entry.getValue(), deployment));
+        for (Map.Entry<String, ServletHandler> entry : deployment.getServlets().getServletHandlers().entrySet()) {
+            ret.put(entry.getKey(), new ServletRegistrationImpl(entry.getValue().getManagedServlet().getServletInfo(), entry.getValue().getManagedServlet(), deployment));
         }
         return ret;
     }

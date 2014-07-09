@@ -74,7 +74,6 @@ public class DefaultServlet extends HttpServlet {
     public static final String RESOLVE_AGAINST_CONTEXT_ROOT = "resolve-against-context-root";
 
     private static final Set<String> DEFAULT_ALLOWED_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList("js", "css", "png", "jpg", "gif", "html", "htm", "txt", "pdf", "jpeg", "xml")));
-    private static final Set<String> DEFAULT_DISALLOWED_EXTENSIONS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList("class", "jar", "war")));
 
 
     private Deployment deployment;
@@ -83,7 +82,7 @@ public class DefaultServlet extends HttpServlet {
 
     private boolean defaultAllowed = true;
     private Set<String> allowed = DEFAULT_ALLOWED_EXTENSIONS;
-    private Set<String> disallowed = DEFAULT_DISALLOWED_EXTENSIONS;
+    private Set<String> disallowed = Collections.emptySet();
     private boolean resolveAgainstContextRoot;
 
     @Override
@@ -127,7 +126,7 @@ public class DefaultServlet extends HttpServlet {
     @Override
     protected void doGet(final HttpServletRequest req, final HttpServletResponse resp) throws ServletException, IOException {
         final String path = getPath(req);
-        if (!isAllowed(path)) {
+        if (!isAllowed(path, req.getDispatcherType())) {
             resp.sendError(404);
             return;
         }
@@ -246,9 +245,9 @@ public class DefaultServlet extends HttpServlet {
         //we are going to proceed. Set the appropriate headers
         final String contentType = deployment.getServletContext().getMimeType(resource.getName());
         if (contentType != null) {
-            resp.setHeader(Headers.CONTENT_TYPE_STRING, contentType);
+            resp.setContentType(contentType);
         } else {
-            resp.setHeader(Headers.CONTENT_TYPE_STRING, "application/octet-stream");
+            resp.setContentType("application/octet-stream");
         }
         if (lastModified != null) {
             resp.setHeader(Headers.LAST_MODIFIED_STRING, resource.getLastModifiedString());
@@ -315,13 +314,16 @@ public class DefaultServlet extends HttpServlet {
 
     }
 
-    private boolean isAllowed(String path) {
+    private boolean isAllowed(String path, DispatcherType dispatcherType) {
         if (!path.isEmpty()) {
-            if (path.startsWith("/META-INF") ||
-                    path.startsWith("META-INF") ||
-                    path.startsWith("/WEB-INF") ||
-                    path.startsWith("WEB-INF")) {
-                return false;
+            if(dispatcherType == DispatcherType.REQUEST) {
+                //WFLY-3543 allow the dispatcher to access stuff in web-inf and meta inf
+                if (path.startsWith("/META-INF") ||
+                        path.startsWith("META-INF") ||
+                        path.startsWith("/WEB-INF") ||
+                        path.startsWith("WEB-INF")) {
+                    return false;
+                }
             }
         }
         int pos = path.lastIndexOf('/');

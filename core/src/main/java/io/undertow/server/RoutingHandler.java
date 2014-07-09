@@ -27,6 +27,7 @@ import io.undertow.util.PathTemplateMatcher;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -121,12 +122,38 @@ public class RoutingHandler implements HttpHandler {
         return this;
     }
 
+    public synchronized RoutingHandler addAll(RoutingHandler routingHandler) {
+        for (Entry<HttpString, PathTemplateMatcher<RoutingMatch>> entry : routingHandler.getMatches().entrySet()) {
+            HttpString method = entry.getKey();
+            PathTemplateMatcher<RoutingMatch> matcher = matches.get(method);
+            if (matcher == null) {
+                matches.put(method, matcher = new PathTemplateMatcher<>());
+            }
+            matcher.addAll(entry.getValue());
+        }
+        return this;
+    }
+
+    Map<HttpString, PathTemplateMatcher<RoutingMatch>> getMatches() {
+        return matches;
+    }
+
     public HttpHandler getFallbackHandler() {
         return fallbackHandler;
     }
 
-    public void setFallbackHandler(HttpHandler fallbackHandler) {
+    public RoutingHandler setFallbackHandler(HttpHandler fallbackHandler) {
         this.fallbackHandler = fallbackHandler;
+        return this;
+    }
+
+    public HttpHandler getInvalidMethodHandler() {
+        return invalidMethodHandler;
+    }
+
+    public RoutingHandler setInvalidMethodHandler(HttpHandler invalidMethodHandler) {
+        this.invalidMethodHandler = invalidMethodHandler;
+        return this;
     }
 
     private static class RoutingMatch {

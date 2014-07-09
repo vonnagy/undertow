@@ -498,6 +498,10 @@ public final class HttpServerExchange extends AbstractAttachable {
         return this;
     }
 
+    /**
+     *
+     * @return The query string, without the leading ?
+     */
     public String getQueryString() {
         return queryString;
     }
@@ -1252,7 +1256,7 @@ public final class HttpServerExchange extends AbstractAttachable {
     public HttpServerExchange addResponseWrapper(final ConduitWrapper<StreamSinkConduit> wrapper) {
         ConduitWrapper<StreamSinkConduit>[] wrappers = responseWrappers;
         if (responseChannel != null) {
-            throw UndertowMessages.MESSAGES.requestChannelAlreadyProvided();
+            throw UndertowMessages.MESSAGES.responseChannelAlreadyProvided();
         }
         if(wrappers == null) {
             this.responseWrappers = wrappers = new ConduitWrapper[2];
@@ -1661,8 +1665,11 @@ public final class HttpServerExchange extends AbstractAttachable {
 
         @Override
         public void close() throws IOException {
-            IoUtils.safeClose(getInputStream());
-            IoUtils.safeClose(getOutputStream());
+            try {
+                getInputStream().close();
+            } finally {
+                getOutputStream().close();
+            }
         }
     }
 

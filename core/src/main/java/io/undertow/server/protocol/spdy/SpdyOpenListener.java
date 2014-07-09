@@ -20,6 +20,7 @@ package io.undertow.server.protocol.spdy;
 
 import io.undertow.UndertowLogger;
 import io.undertow.UndertowMessages;
+import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.OpenListener;
 import io.undertow.server.protocol.http.HttpOpenListener;
@@ -69,7 +70,7 @@ public final class SpdyOpenListener implements ChannelListener<StreamConnection>
     }
 
     public SpdyOpenListener(final Pool<ByteBuffer> pool, final Pool<ByteBuffer> heapBufferPool, final OptionMap undertowOptions, final int bufferSize) {
-        this(pool, heapBufferPool, bufferSize, null);
+        this(pool, heapBufferPool, undertowOptions, bufferSize, null);
     }
 
     public SpdyOpenListener(final Pool<ByteBuffer> pool, final Pool<ByteBuffer> heapBufferPool, final int bufferSize, HttpOpenListener httpDelegate) {
@@ -104,7 +105,7 @@ public final class SpdyOpenListener implements ChannelListener<StreamConnection>
         if (existing != null) {
             UndertowLogger.REQUEST_LOGGER.debug("Resuming existing session, not doing NPN negotiation");
             if(existing.equals(SPDY_3_1) || existing.equals(SPDY_3)) {
-                SpdyChannel sc = new SpdyChannel(channel, bufferPool, new ImmediatePooled<>(ByteBuffer.wrap(new byte[0])), heapBufferPool);
+                SpdyChannel sc = new SpdyChannel(channel, bufferPool, new ImmediatePooled<>(ByteBuffer.wrap(new byte[0])), heapBufferPool, false);
                 sc.getReceiveSetter().set(new SpdyReceiveListener(rootHandler, getUndertowOptions(), bufferSize));
                 sc.resumeReceives();
             } else {
@@ -193,7 +194,11 @@ public final class SpdyOpenListener implements ChannelListener<StreamConnection>
 
                         NextProtoNego.remove(JsseXnioSsl.getSslEngine((SslConnection) channel));
                         //cool, we have a spdy connection.
-                        SpdyChannel channel = new SpdyChannel(this.channel, bufferPool, buffer, heapBufferPool);
+                        SpdyChannel channel = new SpdyChannel(this.channel, bufferPool, buffer, heapBufferPool, false);
+                        Integer idleTimeout = undertowOptions.get(UndertowOptions.IDLE_TIMEOUT);
+                        if(idleTimeout != null && idleTimeout > 0) {
+                            channel.setIdleTimeout(idleTimeout);
+                        }
                         free = false;
                         channel.getReceiveSetter().set(new SpdyReceiveListener(rootHandler, getUndertowOptions(), bufferSize));
                         channel.resumeReceives();

@@ -48,6 +48,7 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
     private HttpString currentHeader;
     private ByteArrayOutputStream partialValue;
     private int remainingData;
+    private boolean beforeHeadersHandled = false;
 
 
     public SpdyHeaderBlockParser(Pool<ByteBuffer> bufferPool, SpdyChannel channel, int frameLength, Inflater inflater) {
@@ -58,9 +59,11 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
 
     @Override
     protected void handleData(ByteBuffer resource) throws IOException {
-        if (!handleBeforeHeader(resource)) {
-            return;
-        }
+        if(!beforeHeadersHandled) {
+            if (!handleBeforeHeader(resource)) {
+                return;
+            }
+        } beforeHeadersHandled = true;
         Pooled<ByteBuffer> outPooled = channel.getHeapBufferPool().allocate();
         Pooled<ByteBuffer> inPooled = channel.getHeapBufferPool().allocate();
         try {
@@ -142,7 +145,7 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
                     this.partialValue = null;
                 } else {
                     remainingData = remainingData - data.remaining();
-                    partialValue.write(data.array(), data.arrayOffset() + data.remaining(), data.remaining());
+                    partialValue.write(data.array(), data.arrayOffset() + data.position(), data.remaining());
                     data.clear();
                     return;
                 }
@@ -164,7 +167,7 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
                     byte[] array = data.array();
                     for (int i = start; i < end; ++i) {
                         if (array[i] == 0) {
-                            headerMap.add(currentHeader, new String(array, start, i - start - 1, "UTF-8"));
+                            headerMap.add(currentHeader, new String(array, start, i - start, "UTF-8"));
                             start = i + 1;
                         }
                     }
@@ -174,7 +177,7 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
                 } else {
                     remainingData = valueLength - data.remaining();
                     int start = data.arrayOffset() + data.position();
-                    int end = start + valueLength;
+                    int end = start + data.remaining();
                     byte[] array = data.array();
                     for (int i = start; i < end; ++i) {
                         if (array[i] == 0) {
@@ -208,7 +211,7 @@ abstract class SpdyHeaderBlockParser extends PushBackParser {
                 } else {
                     remainingData = remainingData - data.remaining();
                     partialValue = new ByteArrayOutputStream();
-                    partialValue.write(data.array(), data.arrayOffset() + data.remaining(), data.remaining());
+                    partialValue.write(data.array(), data.arrayOffset() + data.position(), data.remaining());
                     data.clear();
                     return;
                 }
