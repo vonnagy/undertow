@@ -46,6 +46,7 @@ import io.undertow.util.HeaderMap;
 import io.undertow.util.HeaderValues;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
+import io.undertow.util.NetworkUtils;
 import io.undertow.util.SameThreadExecutor;
 import org.jboss.logging.Logger;
 import org.xnio.ChannelExceptionHandler;
@@ -331,6 +332,39 @@ public final class ProxyHandler implements HttpHandler {
                 outboundRequestHeaders.put(Headers.X_FORWARDED_FOR, "localhost");
             }
             outboundRequestHeaders.put(Headers.X_FORWARDED_PROTO, exchange.getRequestScheme());
+
+            // Make sure that we properly adjust the host headers
+            if (outboundRequestHeaders.contains(Headers.HOST)) {
+              final String host = outboundRequestHeaders.get(Headers.HOST).getFirst();
+
+              // Set the X_FORWARDED_HOST header
+              if (outboundRequestHeaders.contains(Headers.X_FORWARDED_HOST)) {
+                // Append to the current value
+                outboundRequestHeaders.get(Headers.X_FORWARDED_HOST).add(host);
+              }
+              else {
+                outboundRequestHeaders.add(Headers.X_FORWARDED_HOST, host);
+              }
+
+              // Now set the host header to that of the new address
+              try {
+                final InetSocketAddress proxyAddress = (InetSocketAddress)clientConnection.getConnection().getPeerAddress();
+                String proxyHost = NetworkUtils.formatPossibleIpv6Address(proxyAddress.getAddress().getHostAddress());
+                int port = proxyAddress.getPort();
+
+                if (!((exchange.getRequestScheme().equals("http") && port == 80)
+                  || (exchange.getRequestScheme().equals("https") && port == 8080))) {
+                  proxyHost = proxyHost + ":" + port;
+                }
+
+                outboundRequestHeaders.put(Headers.HOST, proxyHost);
+              }
+              catch (ClassCastException ex) {
+                exchange.setResponseCode(500);
+                exchange.endExchange();
+                return;
+              }
+            }
 
             if (exchange.getRequestScheme().equals("https")) {
                 request.putAttachment(ProxiedRequestAttachments.IS_SSL, true);
