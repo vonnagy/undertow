@@ -21,16 +21,19 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Random;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLContext;
 import javax.websocket.ClientEndpointConfig;
+import javax.websocket.CloseReason;
 import javax.websocket.ContainerProvider;
 import javax.websocket.Endpoint;
 import javax.websocket.EndpointConfig;
 import javax.websocket.MessageHandler;
 import javax.websocket.Session;
 
+import io.undertow.server.handlers.RequestDumpingHandler;
 import io.undertow.servlet.Servlets;
 import io.undertow.servlet.api.DeploymentInfo;
 import io.undertow.servlet.api.DeploymentManager;
@@ -92,7 +95,7 @@ public class BinaryEndpointTest {
         manager.deploy();
 
 
-        DefaultServer.setRootHandler(manager.start());
+        DefaultServer.setRootHandler(new RequestDumpingHandler(manager.start()));
         DefaultServer.startSSLServer();
     }
 
@@ -111,14 +114,21 @@ public class BinaryEndpointTest {
         clientEndpointConfig.getUserProperties().put(DefaultWebSocketClientSslProvider.SSL_CONTEXT, context);
         ContainerProvider.getWebSocketContainer().connectToServer(endpoint, clientEndpointConfig, new URI("wss://" + DefaultServer.getHostAddress("default") + ":" + DefaultServer.getHostSSLPort("default") + "/partial"));
         Assert.assertArrayEquals(bytes, endpoint.getResponses().poll(15, TimeUnit.SECONDS));
+        endpoint.session.close();
+        endpoint.closeLatch.await(10, TimeUnit.SECONDS);
+
     }
 
     public static class ProgramaticClientEndpoint extends Endpoint {
 
         private final LinkedBlockingDeque<byte[]> responses = new LinkedBlockingDeque<>();
 
+        final CountDownLatch closeLatch = new CountDownLatch(1);
+        volatile Session session;
+
         @Override
         public void onOpen(Session session, EndpointConfig config) {
+            this.session = session;
             session.getAsyncRemote().sendBinary(ByteBuffer.wrap(bytes));
             session.addMessageHandler(new MessageHandler.Whole<byte[]>() {
 
@@ -127,6 +137,11 @@ public class BinaryEndpointTest {
                     responses.add(message);
                 }
             });
+        }
+
+        @Override
+        public void onClose(Session session, CloseReason closeReason) {
+            closeLatch.countDown();
         }
 
         public LinkedBlockingDeque<byte[]> getResponses() {

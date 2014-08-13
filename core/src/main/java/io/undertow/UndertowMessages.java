@@ -302,4 +302,19 @@ public interface UndertowMessages {
 
     @Message(id = 92, value = "A SPDY header was too large to fit in a response buffer, if you want to support larger headers please increase the buffer size")
     IllegalStateException headersTooLargeToFitInHeapBuffer();
+
+    @Message(id = 93, value = "A SPDY stream was reset by the remote endpoint")
+    IOException spdyStreamWasReset();
+
+    @Message(id = 94, value = "Blocking await method called from IO thread. Blocking IO must be dispatched to a worker thread or deadlocks will result.")
+    IOException awaitCalledFromIoThread();
+
+    @Message(id = 95, value = "Recursive call to flushSenders()")
+    RuntimeException recursiveCallToFlushingSenders();
+
+    @Message(id = 96, value = "More data was written to the channel than specified in the content-length")
+    IllegalStateException fixedLengthOverflow();
+
+    @Message(id = 97, value = "AJP request already in progress")
+    IllegalStateException ajpRequestAlreadyInProgress();
 }

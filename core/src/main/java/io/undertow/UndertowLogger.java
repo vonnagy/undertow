@@ -146,8 +146,8 @@ public interface UndertowLogger extends BasicLogger {
     void couldNotInitiateSpdyConnection();
 
     @LogMessage(level = Logger.Level.ERROR)
-    @Message(id = 5026, value = "Jetty NPN support not found, SPDY client will not be available.")
-    void jettyNpnNotFound();
+    @Message(id = 5026, value = "Jetty ALPN support not found on boot class path, SPDY client will not be available.")
+    void jettyALPNNotFound();
 
     @LogMessage(level = Logger.Level.ERROR)
     @Message(id = 5027, value = "Timing out request to %s")
@@ -164,5 +164,9 @@ public interface UndertowLogger extends BasicLogger {
     @LogMessage(level = Logger.Level.ERROR)
     @Message(id = 5031, value = "Proxy request to %s could not connect to backend server %s")
     void proxyFailedToConnectToBackend(String requestURI, URI uri);
+
+    @LogMessage(level = Logger.Level.ERROR)
+    @Message(id = 5032, value = "Listener not making progress on framed channel, closing channel to prevent infinite loop")
+    void listenerNotProgressing();
 
 }

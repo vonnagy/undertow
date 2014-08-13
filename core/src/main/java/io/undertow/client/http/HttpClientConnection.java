@@ -24,6 +24,7 @@ import io.undertow.client.ClientConnection;
 import io.undertow.client.ClientExchange;
 import io.undertow.client.ClientRequest;
 import io.undertow.client.ClientResponse;
+import io.undertow.client.ProxiedRequestAttachments;
 import io.undertow.client.UndertowClientMessages;
 import io.undertow.conduits.ChunkedStreamSinkConduit;
 import io.undertow.conduits.ChunkedStreamSourceConduit;
@@ -233,6 +234,26 @@ class HttpClientConnection extends AbstractAttachable implements Closeable, Clie
             state |= UPGRADE_REQUESTED;
         }
 
+        //setup the X-Forwarded-* headers
+        String peer = request.getAttachment(ProxiedRequestAttachments.REMOTE_HOST);
+        if(peer != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_FOR, peer);
+        }
+        Boolean proto = request.getAttachment(ProxiedRequestAttachments.IS_SSL);
+        if(proto == null || !proto) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PROTO, "http");
+        } else {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PROTO, "https");
+        }
+        String hn = request.getAttachment(ProxiedRequestAttachments.SERVER_NAME);
+        if(hn != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_HOST, hn);
+        }
+        Integer port = request.getAttachment(ProxiedRequestAttachments.SERVER_PORT);
+        if(port != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PORT, port);
+        }
+
         //setup the client request conduits
         final ConduitStreamSourceChannel sourceChannel = connection.getSourceChannel();
         sourceChannel.setReadListener(clientReadListener);
@@ -281,27 +302,6 @@ class HttpClientConnection extends AbstractAttachable implements Closeable, Clie
                             handleError(exception);
                         }
                     }));
-                }
-            } catch (IOException e) {
-                handleError(e);
-            }
-        } else if (!sinkChannel.isWriteResumed()) {
-            try {
-                //TODO: this needs some more thought
-                if (!sinkChannel.flush()) {
-                    sinkChannel.setWriteListener(new ChannelListener<ConduitStreamSinkChannel>() {
-                        @Override
-                        public void handleEvent(ConduitStreamSinkChannel channel) {
-                            try {
-                                if (channel.flush()) {
-                                    channel.suspendWrites();
-                                }
-                            } catch (IOException e) {
-                                handleError(e);
-                            }
-                        }
-                    });
-                    sinkChannel.resumeWrites();
                 }
             } catch (IOException e) {
                 handleError(e);

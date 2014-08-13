@@ -24,11 +24,13 @@ import io.undertow.client.ClientCallback;
 import io.undertow.client.ClientConnection;
 import io.undertow.client.ClientExchange;
 import io.undertow.client.ClientRequest;
-import io.undertow.spdy.SpdyChannel;
-import io.undertow.spdy.SpdyPingStreamSourceChannel;
-import io.undertow.spdy.SpdyStreamSourceChannel;
-import io.undertow.spdy.SpdySynReplyStreamSourceChannel;
-import io.undertow.spdy.SpdySynStreamStreamSinkChannel;
+import io.undertow.client.ProxiedRequestAttachments;
+import io.undertow.protocols.spdy.SpdyChannel;
+import io.undertow.protocols.spdy.SpdyPingStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdyRstStreamStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdyStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdySynReplyStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdySynStreamStreamSinkChannel;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import org.xnio.ChannelExceptionHandler;
@@ -90,7 +92,34 @@ public class SpdyClientConnection implements ClientConnection {
         request.getRequestHeaders().put(HOST, request.getRequestHeaders().getFirst(Headers.HOST));
         request.getRequestHeaders().remove(Headers.HOST);
 
-        SpdySynStreamStreamSinkChannel sinkChannel = spdyChannel.createStream(request.getRequestHeaders());
+        //setup the X-Forwarded-* headers
+        String peer = request.getAttachment(ProxiedRequestAttachments.REMOTE_HOST);
+        if(peer != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_FOR, peer);
+        }
+        Boolean proto = request.getAttachment(ProxiedRequestAttachments.IS_SSL);
+        if(proto == null || !proto) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PROTO, "http");
+        } else {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PROTO, "https");
+        }
+        String hn = request.getAttachment(ProxiedRequestAttachments.SERVER_NAME);
+        if(hn != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_HOST, hn);
+        }
+        Integer port = request.getAttachment(ProxiedRequestAttachments.SERVER_PORT);
+        if(port != null) {
+            request.getRequestHeaders().put(Headers.X_FORWARDED_PORT, port);
+        }
+
+
+        SpdySynStreamStreamSinkChannel sinkChannel;
+        try {
+            sinkChannel = spdyChannel.createStream(request.getRequestHeaders());
+        } catch (IOException e) {
+            clientCallback.failed(e);
+            return;
+        }
         SpdyClientExchange exchange = new SpdyClientExchange(this, sinkChannel, request);
         currentExchanges.put(sinkChannel.getStreamId(), exchange);
 
@@ -219,7 +248,7 @@ public class SpdyClientConnection implements ClientConnection {
 
     @Override
     public void close() throws IOException {
-        spdyChannel.close();
+        spdyChannel.sendGoAway(SpdyChannel.CLOSE_OK);
     }
 
     @Override
@@ -261,6 +290,15 @@ public class SpdyClientConnection implements ClientConnection {
 
                 } else if (result instanceof SpdyPingStreamSourceChannel) {
                     handlePing((SpdyPingStreamSourceChannel) result);
+                } else if (result instanceof SpdyRstStreamStreamSourceChannel) {
+                    int stream = ((SpdyRstStreamStreamSourceChannel)result).getStreamId();
+                    UndertowLogger.REQUEST_LOGGER.debugf("Client received RST_STREAM for stream %s", stream);
+                    SpdyClientExchange exchange = currentExchanges.get(stream);
+                    if(exchange != null) {
+                        exchange.failed(UndertowMessages.MESSAGES.spdyStreamWasReset());
+                    }
+                } else if(!channel.isOpen()) {
+                    throw UndertowMessages.MESSAGES.channelIsClosed();
                 }
 
             } catch (IOException e) {

@@ -23,11 +23,11 @@ import io.undertow.UndertowOptions;
 import io.undertow.server.Connectors;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
-import io.undertow.spdy.SpdyChannel;
-import io.undertow.spdy.SpdyPingStreamSourceChannel;
-import io.undertow.spdy.SpdyStreamSourceChannel;
-import io.undertow.spdy.SpdySynReplyStreamSinkChannel;
-import io.undertow.spdy.SpdySynStreamStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdyChannel;
+import io.undertow.protocols.spdy.SpdyPingStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdyStreamSourceChannel;
+import io.undertow.protocols.spdy.SpdySynReplyStreamSinkChannel;
+import io.undertow.protocols.spdy.SpdySynStreamStreamSourceChannel;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import io.undertow.util.URLUtils;
@@ -94,6 +94,7 @@ public class SpdyReceiveListener implements ChannelListener<SpdyChannel> {
 
 
                 final HttpServerExchange exchange = new HttpServerExchange(connection, dataChannel.getHeaders(), dataChannel.getResponseChannel().getHeaders(), maxEntitySize);
+                dataChannel.setMaxStreamSize(maxEntitySize);
                 exchange.setRequestScheme(exchange.getRequestHeaders().getFirst(SCHEME));
                 exchange.setProtocol(new HttpString(exchange.getRequestHeaders().getFirst(VERSION)));
                 exchange.setRequestMethod(new HttpString(exchange.getRequestHeaders().getFirst(METHOD)));
@@ -153,28 +154,30 @@ public class SpdyReceiveListener implements ChannelListener<SpdyChannel> {
             char c = encodedPath.charAt(i);
             if (c == '?') {
                 String part;
+                String encodedPart = encodedPath.substring(0, i);
                 if (requiresDecode) {
-                    part = URLUtils.decode(encodedPath.substring(0, i), charset, allowEncodedSlash, decodeBuffer);
+                    part = URLUtils.decode(encodedPart, charset, allowEncodedSlash, decodeBuffer);
                 } else {
-                    part = encodedPath.substring(0, i);
+                    part = encodedPart;
                 }
                 exchange.setRequestPath(part);
                 exchange.setRelativePath(part);
-                exchange.setRequestURI(part);
+                exchange.setRequestURI(encodedPart);
                 final String qs = encodedPath.substring(i + 1);
                 exchange.setQueryString(qs);
                 URLUtils.parseQueryString(qs, exchange, encoding, decode);
                 return;
             } else if(c == ';') {
                 String part;
+                String encodedPart = encodedPath.substring(0, i);
                 if (requiresDecode) {
-                    part = URLUtils.decode(encodedPath.substring(0, i), charset, allowEncodedSlash, decodeBuffer);
+                    part = URLUtils.decode(encodedPart, charset, allowEncodedSlash, decodeBuffer);
                 } else {
-                    part = encodedPath.substring(0, i);
+                    part = encodedPart;
                 }
                 exchange.setRequestPath(part);
                 exchange.setRelativePath(part);
-                exchange.setRequestURI(part);
+                exchange.setRequestURI(encodedPart);
                 for(int j = i; j < encodedPath.length(); ++j) {
                     if (encodedPath.charAt(j) == '?') {
                         String pathParams = encodedPath.substring(i + 1, j);
@@ -187,7 +190,7 @@ public class SpdyReceiveListener implements ChannelListener<SpdyChannel> {
                 }
                 URLUtils.parsePathParms(encodedPath.substring(i + 1), exchange, encoding, decode);
                 return;
-            } else if(c == '%') {
+            } else if(c == '%' || c == '+') {
                 requiresDecode = true;
             }
         }
@@ -200,7 +203,7 @@ public class SpdyReceiveListener implements ChannelListener<SpdyChannel> {
         }
         exchange.setRequestPath(part);
         exchange.setRelativePath(part);
-        exchange.setRequestURI(part);
+        exchange.setRequestURI(encodedPath);
     }
 
 }

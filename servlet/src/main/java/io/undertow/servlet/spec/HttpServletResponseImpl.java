@@ -38,6 +38,7 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import io.undertow.UndertowLogger;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.servlet.UndertowServletMessages;
 import io.undertow.servlet.handlers.ServletRequestContext;
@@ -183,11 +184,17 @@ public final class HttpServletResponseImpl implements HttpServletResponse {
 
     @Override
     public void setHeader(final String name, final String value) {
+        if(name == null) {
+            throw UndertowServletMessages.MESSAGES.headerNameWasNull();
+        }
         setHeader(new HttpString(name), value);
     }
 
 
     public void setHeader(final HttpString name, final String value) {
+        if(name == null) {
+            throw UndertowServletMessages.MESSAGES.headerNameWasNull();
+        }
         if (insideInclude || ignoredFlushPerformed) {
             return;
         }
@@ -200,10 +207,16 @@ public final class HttpServletResponseImpl implements HttpServletResponse {
 
     @Override
     public void addHeader(final String name, final String value) {
+        if(name == null) {
+            throw UndertowServletMessages.MESSAGES.headerNameWasNull();
+        }
         addHeader(new HttpString(name), value);
     }
 
     public void addHeader(final HttpString name, final String value) {
+        if(name == null) {
+            throw UndertowServletMessages.MESSAGES.headerNameWasNull();
+        }
         if (insideInclude || ignoredFlushPerformed) {
             return;
         }
@@ -466,6 +479,15 @@ public final class HttpServletResponseImpl implements HttpServletResponse {
         }
     }
 
+    public void freeResources() throws IOException {
+        if(writer != null) {
+            writer.close();
+        }
+        if(servletOutputStream != null) {
+            servletOutputStream.close();
+        }
+    }
+
     @Override
     public void resetBuffer() {
         if (servletOutputStream != null) {
@@ -538,7 +560,7 @@ public final class HttpServletResponseImpl implements HttpServletResponse {
         try {
             closeStreamAndWriter();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            UndertowLogger.REQUEST_IO_LOGGER.ioException(e);
         }
     }
 
